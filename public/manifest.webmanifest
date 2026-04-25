@@ -1,0 +1,19 @@
+{
+  "name": "VanEscolar - Baby Transportes",
+  "short_name": "VanEscolar",
+  "description": "Sistema de gestão e rastreamento de transporte escolar",
+  "theme_color": "#fcd34d",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
