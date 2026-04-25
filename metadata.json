@@ -1,0 +1,6 @@
+{
+  "name": "VanEscolar",
+  "description": "Sistema de gestão de transporte escolar com rastreamento em tempo real para pais e motoristas.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["Real-time tracking", "Route management", "Firebase integration"]
+}
