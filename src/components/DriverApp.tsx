@@ -395,6 +395,86 @@ export default function DriverApp() {
     setShowSchoolModal(false);
   };
 
+  const [addressSuggestions, setAddressSuggestions] = useState<any[]>([]);
+  const [activeInputIdx, setActiveInputIdx] = useState<number | null>(null);
+
+  const searchAddress = async (query: string) => {
+    if (query.length < 3) {
+        setAddressSuggestions([]);
+        return;
+    }
+    try {
+        const cityFilter = settingsData.defaultCity ? `, ${settingsData.defaultCity}` : "";
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(query + cityFilter + ", Brasil")}&limit=5`);
+        const data = await res.json();
+        setAddressSuggestions(data);
+    } catch (e) {
+        console.error(e);
+    }
+  };
+
+  const selectSuggestion = (sug: any, stopIdx: number) => {
+    const ns = [...routeData.stops];
+    const addr = sug.address;
+    ns[stopIdx] = {
+        ...ns[stopIdx],
+        rua: addr.road || addr.pedestrian || addr.suburb || "",
+        num: addr.house_number || "",
+        bairro: addr.suburb || addr.neighbourhood || "",
+        cidade: addr.city || addr.town || addr.municipality || settingsData.defaultCity || "",
+        lat: parseFloat(sug.lat),
+        lng: parseFloat(sug.lon)
+    };
+    setRouteData(p => ({ ...p, stops: ns }));
+    setAddressSuggestions([]);
+    setActiveInputIdx(null);
+  };
+
+  const [showStudentModal, setShowStudentModal] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<{routeId: string, stopIdx: number | null, data: any} | null>(null);
+
+  const openAddStudent = () => {
+    setEditingStudent({
+        routeId: activeRouteId || (curDriver?.routes ? Object.keys(curDriver.routes)[0] : ""),
+        stopIdx: null,
+        data: { child: "", rua: "", num: "", bairro: "", cidade: settingsData.defaultCity || "", schoolId: "" }
+    });
+    setShowStudentModal(true);
+  };
+
+  const saveStudent = async () => {
+    if (!editingStudent || !editingStudent.routeId || !editingStudent.data.child || !editingStudent.data.schoolId) {
+        alert("Preencha nome, rota e escola.");
+        return;
+    }
+    
+    const route = curDriver?.routes?.[editingStudent.routeId];
+    if (!route) return;
+
+    const s = editingStudent.data;
+    const searchAddr = `${s.rua}, ${s.num}, ${s.bairro}, ${s.cidade}`;
+    const coords = s.lat ? { lat: s.lat, lng: s.lng } : (await geocode(searchAddr));
+    
+    const stopsList = Object.values(route.stops || {}) as Stop[];
+    let newIdx = editingStudent.stopIdx;
+    
+    if (newIdx === null) {
+        newIdx = stopsList.length;
+    }
+
+    const newStop = {
+        ...s,
+        idx: newIdx,
+        addr: searchAddr,
+        lat: coords?.lat || route.schoolLat,
+        lng: coords?.lng || route.schoolLng
+    };
+
+    await set(ref(db, `drivers/${curDriver!.id}/routes/${editingStudent.routeId}/stops/stop${newIdx}`), newStop);
+    setShowStudentModal(false);
+    setEditingStudent(null);
+  };
+
   const saveRouteEntry = async () => {
     if (!routeData.name || !routeData.schoolId) return alert("Nome e escola obrigatórios");
     const school = curDriver?.schools?.[routeData.schoolId];
@@ -594,8 +674,8 @@ export default function DriverApp() {
                     {activeTab === "alunos" && (
                         <div className="space-y-6">
                             <div className="px-4 pt-4">
-                                <Button fullWidth variant="outline" className="border-dashed" onClick={() => { setRouteEditId(null); setRouteData({name: "", schoolId: "", stops: []}); setShowRouteModal(true); }}>
-                                    <Plus size={16} className="mr-2" /> Novo Aluno / Percurso
+                                <Button fullWidth className="bg-amber-600 hover:bg-amber-700 text-white" onClick={openAddStudent}>
+                                    <Plus size={16} className="mr-2" /> Novo Aluno
                                 </Button>
                             </div>
                             {Object.values(curDriver?.routes || {}).map((r: any) => {
@@ -630,7 +710,7 @@ export default function DriverApp() {
                                                             </div>
                                                             <div className="min-w-0">
                                                                 <span className="font-bold block truncate">{s.child}</span>
-                                                                <span className="text-[10px] text-gray-400 truncate block">{s.rua}, {s.num}</span>
+                                                                <span className="text-[10px] text-gray-400 truncate block">{s.rua}, {s.num} {s.bairro ? `- ${s.bairro}` : ""}</span>
                                                             </div>
                                                         </div>
                                                         <div className="flex gap-1 items-center shrink-0 ml-2">
@@ -642,9 +722,16 @@ export default function DriverApp() {
                                                                 <Copy size={16}/>
                                                             </button>
                                                             <button 
-                                                                onClick={() => { setRouteEditId(r.id); setRouteData({name: r.name, schoolId: r.schoolId, stops: Object.values(r.stops || {})}); setShowRouteModal(true); }}
+                                                                onClick={() => { 
+                                                                    setEditingStudent({
+                                                                        routeId: r.id,
+                                                                        stopIdx: s.idx,
+                                                                        data: { ...s }
+                                                                    });
+                                                                    setShowStudentModal(true);
+                                                                }}
                                                                 className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
-                                                                title="Editar na rota"
+                                                                title="Editar dados"
                                                             >
                                                                 <Edit2 size={16}/>
                                                             </button>
@@ -726,6 +813,105 @@ export default function DriverApp() {
             </div>
         )}
 
+        {showStudentModal && editingStudent && (
+            <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+                <Card className="w-full max-w-sm p-6 space-y-4">
+                    <div className="flex items-center gap-2 text-amber-600 mb-2">
+                        <Plus size={20} />
+                        <h3 className="font-bold">{editingStudent.stopIdx === null ? "Novo Aluno" : "Editar Aluno"}</h3>
+                    </div>
+                    
+                    <div className="space-y-3">
+                        <div>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Nome da Criança</label>
+                            <input 
+                                className="w-full border p-2.5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-500/20" 
+                                placeholder="Nome completo" 
+                                value={editingStudent.data.child} 
+                                onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, child: e.target.value}}))} 
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Período / Rota</label>
+                                <select 
+                                    className="w-full border p-2.5 rounded-xl text-xs bg-white outline-none"
+                                    value={editingStudent.routeId}
+                                    onChange={e => setEditingStudent(p => ({...p!, routeId: e.target.value}))}
+                                >
+                                    <option value="">Selecione...</option>
+                                    {Object.values(curDriver?.routes || {}).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Escola</label>
+                                <select 
+                                    className="w-full border p-2.5 rounded-xl text-xs bg-white outline-none"
+                                    value={editingStudent.data.schoolId}
+                                    onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, schoolId: e.target.value}}))}
+                                >
+                                    <option value="">Selecione...</option>
+                                    {Object.values(curDriver?.schools || {}).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="relative">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Endereço (Rua, Nº, Bairro)</label>
+                            <div className="flex gap-2 mb-2">
+                                <input 
+                                    className="flex-1 border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
+                                    placeholder="Comece a digitar o endereço..." 
+                                    value={activeInputIdx === -1 ? "" : `${editingStudent.data.rua} ${editingStudent.data.num}`}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setEditingStudent(p => ({...p!, data: {...p!.data, rua: val}}));
+                                        searchAddress(val);
+                                        setActiveInputIdx(-1);
+                                    }} 
+                                />
+                            </div>
+                            {activeInputIdx === -1 && addressSuggestions.length > 0 && (
+                                <div className="absolute top-full left-0 right-0 bg-white border rounded-xl shadow-xl z-50 mt-1 max-h-40 overflow-auto">
+                                    {addressSuggestions.map((s, i) => (
+                                        <button 
+                                            key={i} 
+                                            className="w-full text-left p-3 text-xs hover:bg-amber-50 border-b last:border-0"
+                                            onClick={() => {
+                                                const addr = s.address;
+                                                setEditingStudent(p => ({
+                                                    ...p!,
+                                                    data: {
+                                                        ...p!.data,
+                                                        rua: addr.road || addr.pedestrian || addr.suburb || "",
+                                                        num: addr.house_number || "",
+                                                        bairro: addr.suburb || addr.neighbourhood || "",
+                                                        cidade: addr.city || addr.town || addr.municipality || settingsData.defaultCity || "",
+                                                        lat: parseFloat(s.lat),
+                                                        lng: parseFloat(s.lon)
+                                                    }
+                                                }));
+                                                setAddressSuggestions([]);
+                                                setActiveInputIdx(null);
+                                            }}
+                                        >
+                                            <p className="font-bold">{s.display_name}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="pt-2 flex gap-2">
+                        <Button variant="ghost" className="flex-1" onClick={() => { setShowStudentModal(false); setEditingStudent(null); }}>Cancelar</Button>
+                        <Button className="flex-1" onClick={saveStudent}>Salvar Aluno</Button>
+                    </div>
+                </Card>
+            </div>
+        )}
+
         {showSchoolModal && (
             <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
                 <Card className="w-full max-w-sm p-6 space-y-4">
@@ -765,6 +951,37 @@ export default function DriverApp() {
                                     <div className="flex items-center gap-2">
                                         <User size={12} className="text-amber-500 shrink-0" />
                                         <input className="flex-1 bg-transparent font-bold outline-none border-b border-transparent focus:border-amber-200" placeholder="Nome da Criança" value={s.child} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).child=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                    </div>
+                                    <div className="relative">
+                                        <div className="flex items-center gap-2">
+                                            <MapPin size={12} className="text-gray-400 shrink-0" />
+                                            <input 
+                                                className="flex-1 bg-transparent text-[11px] outline-none border-b border-transparent focus:border-amber-200" 
+                                                placeholder="Pesquisar endereço..." 
+                                                value={activeInputIdx === i ? "" : `${s.rua} ${s.num}`}
+                                                onChange={e => {
+                                                    const val = e.target.value;
+                                                    const ns = [...routeData.stops];
+                                                    (ns[i] as any).rua = val;
+                                                    setRouteData(p => ({ ...p, stops: ns }));
+                                                    searchAddress(val);
+                                                    setActiveInputIdx(i);
+                                                }}
+                                            />
+                                        </div>
+                                        {activeInputIdx === i && addressSuggestions.length > 0 && (
+                                            <div className="absolute top-full left-0 right-0 bg-white border rounded shadow-lg z-50 mt-1 max-h-32 overflow-auto">
+                                                {addressSuggestions.map((sug, idx) => (
+                                                    <button 
+                                                        key={idx} 
+                                                        className="w-full text-left p-2 text-[10px] hover:bg-amber-50 border-b last:border-0"
+                                                        onClick={() => selectSuggestion(sug, i)}
+                                                    >
+                                                        {sug.display_name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="grid grid-cols-12 gap-2 pl-5">
                                         <div className="col-span-8">
