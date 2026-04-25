@@ -25,11 +25,11 @@ const createStopIcon = (bg: string, txt: string, size: number = 22) => L.divIcon
 });
 
 // Fix generic markers in Leaflet for production
-const iconUrl = new URL('leaflet/dist/images/marker-icon.png', import.meta.url).href;
-const shadowUrl = new URL('leaflet/dist/images/marker-shadow.png', import.meta.url).href;
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 let DefaultIcon = L.icon({
-    iconUrl,
-    shadowUrl,
+    iconUrl: icon,
+    shadowUrl: iconShadow,
     iconSize: [25, 41],
     iconAnchor: [12, 41]
 });
