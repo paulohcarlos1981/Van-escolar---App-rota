@@ -12,11 +12,11 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 // Fix generic markers in Leaflet
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+const iconUrl = new URL('leaflet/dist/images/marker-icon.png', import.meta.url).href;
+const shadowUrl = new URL('leaflet/dist/images/marker-shadow.png', import.meta.url).href;
 let DefaultIcon = L.icon({
-    iconUrl: icon,
-    shadowUrl: iconShadow,
+    iconUrl,
+    shadowUrl,
     iconSize: [25, 41],
     iconAnchor: [12, 41]
 });
@@ -105,7 +105,7 @@ const Button = ({ className, variant = "primary", size = "md", fullWidth, ...pro
   );
 };
 
-const Card = ({ children, className, live }: { children: React.ReactNode, className?: string, live?: boolean }) => (
+const Card = ({ children, className, live }: { children: React.ReactNode, className?: string, live?: boolean, [key: string]: any }) => (
   <div className={cn(
     "bg-white border p-4 rounded-xl shadow-sm transition-all",
     live ? "border-amber-400 ring-1 ring-amber-100" : "border-gray-200",
@@ -137,7 +137,7 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
   useEffect(() => {
     const valid = positions.filter(p => p && !isNaN(p[0]) && !isNaN(p[1]));
     if (valid.length > 0) {
-      map.fitBounds(valid as L.LatLngExpression[], { padding: [50, 50] });
+      map.fitBounds(valid as L.LatLngBoundsLiteral, { padding: [50, 50] });
     }
   }, [positions, map]);
   return null;
@@ -330,7 +330,7 @@ export default function DriverApp() {
             <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto text-amber-600"><Bus size={32} /></div>
             <h1 className="text-2xl font-bold">VanEscolar</h1>
             <div className="space-y-2">
-                {Object.values(drivers).map(d => (
+                {Object.values(drivers).map((d: any) => (
                     <button key={d.id} onClick={() => loginWithPin(d)} className="w-full text-left p-4 border rounded-xl hover:border-amber-400 hover:bg-amber-50 flex justify-between">
                         <div>
                             <p className="font-bold">{d.name}</p>
@@ -402,7 +402,7 @@ export default function DriverApp() {
                     {activeTab === "rotas" && (
                         <>
                             <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-400">ROTAS</span><Button size="sm" onClick={() => { setRouteEditId(null); setRouteData({name: "", schoolId: "", stops: []}); setShowRouteModal(true); }}>+</Button></div>
-                            {Object.values(curDriver?.routes || {}).map(r => (
+                            {Object.values(curDriver?.routes || {}).map((r: any) => (
                                 <Card key={r.id} live={activeRouteId === r.id} className="space-y-4">
                                     <div><p className="font-bold">{r.name}</p><p className="text-[10px] text-gray-400">{Object.keys(r.stops || {}).length} paradas • {r.schoolName}</p></div>
                                     <div className="flex gap-2">
@@ -438,10 +438,10 @@ export default function DriverApp() {
 
                     {activeTab === "alunos" && (
                         <div className="space-y-4">
-                            {Object.values(curDriver?.routes || {}).map(r => (
+                            {Object.values(curDriver?.routes || {}).map((r: any) => (
                                 <div key={r.id} className="space-y-1">
                                     <p className="text-[10px] font-bold text-amber-600 uppercase">{r.name}</p>
-                                    {Object.values(r.stops || {}).map(s => {
+                                    {Object.values(r.stops || {}).map((s: any) => {
                                         const link = `${window.location.origin}/?v=parent&d=${curDriver!.id}&r=${r.id}&s=${s.idx}`;
                                         return (
                                             <Card key={s.idx} className="!p-2 text-sm flex justify-between items-center">
@@ -458,7 +458,7 @@ export default function DriverApp() {
                     {activeTab === "escolas" && (
                         <>
                             <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-400 uppercase">Escolas</span><Button size="sm" onClick={() => { setSchoolEditId(null); setSchoolData({name:"",rua:"",num:"",bairro:"",cidade:""}); setShowSchoolModal(true); }}>+</Button></div>
-                            {Object.values(curDriver?.schools || {}).map(s => (
+                            {Object.values(curDriver?.schools || {}).map((s: any) => (
                                 <Card key={s.id} className="flex justify-between items-center">
                                     <div className="min-w-0"><p className="font-bold truncate">{s.name}</p><p className="text-[10px] text-gray-400 truncate">{s.rua}, {s.num}</p></div>
                                     <div className="flex gap-1"><Button variant="ghost" size="sm" onClick={() => { setSchoolEditId(s.id); setSchoolData(s as any); setShowSchoolModal(true); }}><Edit2 size={14}/></Button><Button variant="ghost" size="sm" className="text-red-500" onClick={() => remove(ref(db, `drivers/${curDriver!.id}/schools/${s.id}`)) }><Trash2 size={14}/></Button></div>
@@ -509,17 +509,17 @@ export default function DriverApp() {
                     <input className="w-full border p-2 rounded text-sm" placeholder="Nome da Rota" value={routeData.name} onChange={e => setRouteData(p=>({...p, name:e.target.value}))}/>
                     <select className="w-full border p-2 rounded text-sm" value={routeData.schoolId} onChange={e => setRouteData(p=>({...p, schoolId:e.target.value}))}>
                         <option value="">Selecione a Escola</option>
-                        {Object.values(curDriver?.schools || {}).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        {Object.values(curDriver?.schools || {}).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                     <div className="space-y-2 max-h-[40vh] overflow-auto">
                         {routeData.stops.map((s,i) => (
                             <div key={i} className="p-2 border rounded text-xs bg-gray-50 relative">
                                 <button className="absolute top-1 right-1" onClick={() => setRouteData(p=>({...p, stops: p.stops.filter((_,idx)=>idx!==i)}))}>X</button>
-                                <input className="w-full bg-transparent font-bold mb-1 outline-none" placeholder="Criança" value={s.child} onChange={e => { const ns=[...routeData.stops]; ns[i].child=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
-                                <input className="w-full bg-transparent outline-none" placeholder="Endereço" value={s.rua} onChange={e => { const ns=[...routeData.stops]; ns[i].rua=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                <input className="w-full bg-transparent font-bold mb-1 outline-none" placeholder="Criança" value={s.child} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).child=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                <input className="w-full bg-transparent outline-none" placeholder="Endereço" value={s.rua} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).rua=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
                             </div>
                         ))}
-                        <Button variant="outline" size="sm" fullWidth onClick={() => setRouteData(p=>({...p, stops: [...p.stops, {child:"", rua:"", num:"", cidade: curDriver?.schools ? Object.values(curDriver.schools)[0].cidade : ""}]}))}>+ Aluno</Button>
+                        <Button variant="outline" size="sm" fullWidth onClick={() => setRouteData(p=>({...p, stops: [...p.stops, {child:"", rua:"", num:"", cidade: (curDriver?.schools ? Object.values(curDriver.schools)[0] as any : {}).cidade || ""}]}))}>+ Aluno</Button>
                     </div>
                     <Button fullWidth onClick={saveRouteEntry}>Salvar Percurso</Button>
                     <Button variant="ghost" fullWidth onClick={() => setShowRouteModal(false)}>Cancelar</Button>

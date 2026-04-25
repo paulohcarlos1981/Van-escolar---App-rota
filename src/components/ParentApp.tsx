@@ -25,11 +25,11 @@ const createStopIcon = (bg: string, txt: string, size: number = 22) => L.divIcon
 });
 
 // Fix generic markers in Leaflet for production
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+const iconUrl = new URL('leaflet/dist/images/marker-icon.png', import.meta.url).href;
+const shadowUrl = new URL('leaflet/dist/images/marker-shadow.png', import.meta.url).href;
 let DefaultIcon = L.icon({
-    iconUrl: icon,
-    shadowUrl: iconShadow,
+    iconUrl,
+    shadowUrl,
     iconSize: [25, 41],
     iconAnchor: [12, 41]
 });
@@ -41,7 +41,7 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
     const validPositions = positions.filter(p => Array.isArray(p) && p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]));
     if (validPositions.length > 0) {
       try {
-        map.fitBounds(validPositions as L.LatLngExpression[], { padding: [50, 50] });
+        map.fitBounds(validPositions as L.LatLngBoundsLiteral, { padding: [50, 50] });
       } catch (e) {
         console.error("Error fitting bounds", e);
       }
