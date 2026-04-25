@@ -24,11 +24,27 @@ const createStopIcon = (bg: string, txt: string, size: number = 22) => L.divIcon
   iconAnchor: [size / 2, size / 2]
 });
 
+// Fix generic markers in Leaflet for production
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+let DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
 function FitBounds({ positions }: { positions: [number, number][] }) {
   const map = useMap();
   useEffect(() => {
-    if (positions.length > 0) {
-      map.fitBounds(positions, { padding: [50, 50] });
+    const validPositions = positions.filter(p => Array.isArray(p) && p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]));
+    if (validPositions.length > 0) {
+      try {
+        map.fitBounds(validPositions as L.LatLngExpression[], { padding: [50, 50] });
+      } catch (e) {
+        console.error("Error fitting bounds", e);
+      }
     }
   }, [positions, map]);
   return null;
@@ -53,9 +69,9 @@ export default function ParentApp() {
     const params = new URLSearchParams(window.location.search);
     const driverId = params.get("d");
     const routeId = params.get("r");
-    const stopIdx = parseInt(params.get("s") || "-1");
+    const stopIdxInt = parseInt(params.get("s") || "-1");
 
-    if (!driverId || !routeId || stopIdx < 0) {
+    if (!driverId || !routeId || stopIdxInt < 0) {
       setError("Link inválido. Verifique o endereço recebido.");
       setLoading(false);
       return;
@@ -66,36 +82,29 @@ export default function ParentApp() {
         const driverSnap = await get(ref(db, `drivers/${driverId}`));
         if (!driverSnap.exists()) throw new Error("Motorista não encontrado.");
         
-        const driver = driverSnap.val();
-        const route = driver.routes?.[routeId];
-        if (!route) throw new Error("Rota não encontrada.");
+        const driverVal = driverSnap.val();
+        const routeVal = driverVal.routes?.[routeId];
+        if (!routeVal) throw new Error("Rota não encontrada.");
         
-        const stops = Object.values(route.stops || {}).sort((a: any, b: any) => a.idx - b.idx);
-        const student = stops[stopIdx];
-        if (!student) throw new Error("Dados do aluno não encontrados.");
+        const stopsArr = Object.values(routeVal.stops || {}).sort((a: any, b: any) => a.idx - b.idx);
+        const studentObj = stopsArr[stopIdxInt];
+        if (!studentObj) throw new Error("Dados do aluno não encontrados.");
 
-        setData({ driver, route, student, stopIdx });
+        setData({ driver: driverVal, route: routeVal, student: studentObj, stopIdx: stopIdxInt });
         
-        // Listen for live data
         const baseKey = `${driverId}_${routeId}`;
-        
-        // Next stop tracker
-        onValue(ref(db, `active_routes/${baseKey}/nextStopIdx`), (snap) => {
-          setNextStopIdx(snap.val() || 0);
-        });
+        const absentRef = ref(db, `absent/${baseKey}/stop${stopIdxInt}`);
+        const nextStopRef = ref(db, `active_routes/${baseKey}/nextStopIdx`);
+        const gpsRef = ref(db, `gps/${baseKey}`);
 
-        // GPS listener
-        onValue(ref(db, `gps/${baseKey}`), (snap) => {
+        onValue(nextStopRef, (snap) => setNextStopIdx(snap.val() || 0));
+        onValue(absentRef, (snap) => setAbsent(!!snap.val()));
+        onValue(gpsRef, (snap) => {
           const val = snap.val();
           setGps(val);
-          if (val && val.on && student) {
-            calculateETA(student, val);
+          if (val && val.on && studentObj && val.lat && val.lng) {
+            calculateETA(studentObj, val);
           }
-        });
-
-        // Absent listener
-        onValue(ref(db, `absent/${baseKey}/stop${stopIdx}`), (snap) => {
-          setAbsent(!!snap.val());
         });
 
         setLoading(false);
@@ -109,8 +118,8 @@ export default function ParentApp() {
   }, []);
 
   const calculateETA = (student: any, gpsData: any) => {
-    // Simple Haversine
-    const R = 6371; // km
+    if (!student.lat || !gpsData.lat) return;
+    const R = 6371; 
     const dLat = (student.lat - gpsData.lat) * Math.PI / 180;
     const dLng = (student.lng - gpsData.lng) * Math.PI / 180;
     const a = 
@@ -120,9 +129,8 @@ export default function ParentApp() {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const dist = R * c;
 
-    const speed = gpsData.spd > 10 ? gpsData.spd : 30; // default 30km/h if slow
+    const speed = gpsData.spd > 8 ? gpsData.spd : 25; 
     const mins = Math.max(1, Math.round((dist / speed) * 60));
-    
     setEta({ mins, dist });
   };
 
