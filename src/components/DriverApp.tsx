@@ -5,7 +5,7 @@ import { cn } from "../lib/utils";
 import { 
   Bus, Lock, User, Plus, MapPin, School, 
   Settings, LogOut, Trash2, Edit2, Play, Square, Check, X,
-  Copy, Map as MapIcon
+  Copy, Map as MapIcon, Eye, EyeOff
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -155,6 +155,7 @@ export default function DriverApp() {
   const [gpsData, setGpsData] = useState<any>(null);
   const [marks, setMarks] = useState<Record<string, boolean>>({});
   const [absents, setAbsents] = useState<Record<string, boolean>>({});
+  const [showPin, setShowPin] = useState(false);
   
   const [showNewDriverModal, setShowNewDriverModal] = useState(false);
   const [newDriverData, setNewDriverData] = useState({ name: "", pin: "" });
@@ -224,7 +225,16 @@ export default function DriverApp() {
   const handleLogout = () => {
     localStorage.removeItem("ve_session");
     setCurDriver(null);
+    setPin("");
+    setShowPin(false);
     setScreen("login");
+  };
+
+  const handleDeleteDriver = async (e: React.MouseEvent, driverId: string) => {
+    e.stopPropagation();
+    if (confirm("Tem certeza que deseja excluir este motorista? Todos os dados vinculados serão perdidos.")) {
+      await remove(ref(db, `drivers/${driverId}`));
+    }
   };
 
   const getStopsArr = (route: Route) => {
@@ -329,17 +339,26 @@ export default function DriverApp() {
         <Card className="w-full max-w-md p-8 text-center space-y-6">
             <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto text-amber-600"><Bus size={32} /></div>
             <h1 className="text-2xl font-bold">VanEscolar</h1>
-            <div className="space-y-2">
+            <div className="space-y-3">
                 {Object.values(drivers).map((d: any) => (
-                    <button key={d.id} onClick={() => loginWithPin(d)} className="w-full text-left p-4 border rounded-xl hover:border-amber-400 hover:bg-amber-50 flex justify-between">
-                        <div>
-                            <p className="font-bold">{d.name}</p>
-                            <p className="text-xs text-gray-500">{Object.keys(d.routes || {}).length} rota(s)</p>
-                        </div>
-                        <span className="text-amber-500">→</span>
-                    </button>
+                    <div key={d.id} className="relative group">
+                        <button onClick={() => loginWithPin(d)} className="w-full text-left p-4 border rounded-xl hover:border-amber-400 hover:bg-amber-50 flex justify-between pr-12 transition-colors">
+                            <div className="min-w-0">
+                                <p className="font-bold truncate">{d.name}</p>
+                                <p className="text-xs text-gray-500">{Object.keys(d.routes || {}).length} rota(s)</p>
+                            </div>
+                            <span className="text-amber-500 shrink-0">→</span>
+                        </button>
+                        <button 
+                            onClick={(e) => handleDeleteDriver(e, d.id)}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Excluir motorista"
+                        >
+                            <Trash2 size={18} />
+                        </button>
+                    </div>
                 ))}
-                <Button variant="outline" fullWidth onClick={() => setShowNewDriverModal(true)}>+ Novo Motorista</Button>
+                <Button variant="outline" fullWidth className="mt-4" onClick={() => setShowNewDriverModal(true)}>+ Novo Motorista</Button>
             </div>
         </Card>
         {showNewDriverModal && (
@@ -358,18 +377,45 @@ export default function DriverApp() {
 
   if (screen === "pin") return (
     <div className="h-screen flex items-center justify-center p-4 bg-gray-50">
-        <Card className="w-full max-w-xs p-8 text-center space-y-4">
-            <h2 className="font-bold text-lg">{curDriver?.name}</h2>
-            <input 
-              type="password" 
-              autoFocus
-              className="w-full bg-gray-100 text-center text-3xl tracking-[1em] p-4 rounded-xl border-none outline-none font-mono" 
-              maxLength={4} 
-              value={pin} 
-              onChange={e => setPin(e.target.value)} 
-            />
-            <Button fullWidth onClick={handlePinSubmit}>Entrar</Button>
-            <button onClick={() => setScreen("login")} className="text-gray-400 text-sm">Trocar Perfil</button>
+        <Card className="w-full max-w-xs p-8 text-center space-y-6">
+            <div>
+                <h2 className="font-bold text-xl">{curDriver?.name}</h2>
+                <p className="text-xs text-gray-400 mt-1">Digite seu PIN de acesso</p>
+            </div>
+            
+            <div className="relative">
+                <input 
+                    type={showPin ? "text" : "password"} 
+                    autoFocus
+                    placeholder="••••"
+                    className="w-full bg-gray-100 text-center text-3xl tracking-[0.5em] p-4 rounded-xl border-2 border-transparent focus:border-amber-400 outline-none font-mono transition-all" 
+                    maxLength={4} 
+                    value={pin} 
+                    onChange={e => setPin(e.target.value)} 
+                    onKeyDown={e => e.key === 'Enter' && handlePinSubmit()}
+                />
+                <button 
+                    type="button"
+                    onClick={() => setShowPin(!showPin)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-amber-500 transition-colors"
+                >
+                    {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+            </div>
+
+            <div className="space-y-3">
+                <Button fullWidth size="lg" onClick={handlePinSubmit}>Entrar no Painel</Button>
+                <button 
+                    onClick={() => {
+                        setScreen("login");
+                        setPin("");
+                        setShowPin(false);
+                    }} 
+                    className="text-gray-400 text-sm hover:text-gray-600 transition-colors"
+                >
+                    Trocar Perfil de Motorista
+                </button>
+            </div>
         </Card>
     </div>
   );
@@ -511,15 +557,35 @@ export default function DriverApp() {
                         <option value="">Selecione a Escola</option>
                         {Object.values(curDriver?.schools || {}).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
-                    <div className="space-y-2 max-h-[40vh] overflow-auto">
+                    <div className="space-y-2 max-h-[40vh] overflow-auto pr-1">
                         {routeData.stops.map((s,i) => (
-                            <div key={i} className="p-2 border rounded text-xs bg-gray-50 relative">
-                                <button className="absolute top-1 right-1" onClick={() => setRouteData(p=>({...p, stops: p.stops.filter((_,idx)=>idx!==i)}))}>X</button>
-                                <input className="w-full bg-transparent font-bold mb-1 outline-none" placeholder="Criança" value={s.child} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).child=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
-                                <input className="w-full bg-transparent outline-none" placeholder="Endereço" value={s.rua} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).rua=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                            <div key={i} className="p-3 border rounded-xl text-xs bg-gray-50 relative group transition-all hover:border-amber-200">
+                                <button 
+                                    className="absolute top-2 right-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" 
+                                    onClick={() => setRouteData(p=>({...p, stops: p.stops.filter((_,idx)=>idx!==i)}))}
+                                    title="Remover parada"
+                                >
+                                    <X size={16} />
+                                </button>
+                                <div className="space-y-1.5 mt-1">
+                                    <div className="flex items-center gap-2">
+                                        <User size={12} className="text-amber-500 shrink-0" />
+                                        <input className="flex-1 bg-transparent font-bold outline-none border-b border-transparent focus:border-amber-200" placeholder="Nome da Criança" value={s.child} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).child=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <MapPin size={12} className="text-gray-400 shrink-0" />
+                                        <input className="flex-1 bg-transparent outline-none border-b border-transparent focus:border-amber-200" placeholder="Endereço (Rua, Nº, Bairro)" value={s.rua} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).rua=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <MapIcon size={12} className="text-gray-400 shrink-0" />
+                                        <input className="flex-1 bg-transparent outline-none border-b border-transparent focus:border-amber-200" placeholder="Cidade" value={s.cidade} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).cidade=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                    </div>
+                                </div>
                             </div>
                         ))}
-                        <Button variant="outline" size="sm" fullWidth onClick={() => setRouteData(p=>({...p, stops: [...p.stops, {child:"", rua:"", num:"", cidade: (curDriver?.schools ? Object.values(curDriver.schools)[0] as any : {}).cidade || ""}]}))}>+ Aluno</Button>
+                        <Button variant="outline" size="sm" fullWidth className="h-10 border-dashed border-2 hover:bg-amber-50 hover:border-amber-300" onClick={() => setRouteData(p=>({...p, stops: [...p.stops, {child:"", rua:"", num:"", cidade: (curDriver?.schools ? Object.values(curDriver.schools)[0] as any : {}).cidade || ""}]}))}>
+                            <Plus size={16} /> Adicionar Aluno
+                        </Button>
                     </div>
                     <Button fullWidth onClick={saveRouteEntry}>Salvar Percurso</Button>
                     <Button variant="ghost" fullWidth onClick={() => setShowRouteModal(false)}>Cancelar</Button>
