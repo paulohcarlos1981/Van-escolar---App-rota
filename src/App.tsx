@@ -8,6 +8,7 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const v = params.get("v");
+    console.log("App view v:", v);
     setView(v === "parent" ? "parent" : "driver");
   }, []);
 

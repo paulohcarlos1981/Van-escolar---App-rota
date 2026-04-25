@@ -519,7 +519,7 @@ export default function DriverApp() {
                                 <input className="w-full bg-transparent outline-none" placeholder="Endereço" value={s.rua} onChange={e => { const ns=[...routeData.stops]; ns[i].rua=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
                             </div>
                         ))}
-                        <Button variant="outline" size="sm" fullWidth onClick={() => setRouteData(p=>({...p, stops: [...p.stops, {child:"", rua:"", num:"", cidade: CUR_DRIVER?.schools ? Object.values(CUR_DRIVER.schools)[0].cidade : ""}]}))}>+ Aluno</Button>
+                        <Button variant="outline" size="sm" fullWidth onClick={() => setRouteData(p=>({...p, stops: [...p.stops, {child:"", rua:"", num:"", cidade: curDriver?.schools ? Object.values(curDriver.schools)[0].cidade : ""}]}))}>+ Aluno</Button>
                     </div>
                     <Button fullWidth onClick={saveRouteEntry}>Salvar Percurso</Button>
                     <Button variant="ghost" fullWidth onClick={() => setShowRouteModal(false)}>Cancelar</Button>
