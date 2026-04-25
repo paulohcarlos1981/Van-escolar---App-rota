@@ -232,9 +232,26 @@ export default function DriverApp() {
 
   const handleDeleteDriver = async (e: React.MouseEvent, driverId: string) => {
     e.stopPropagation();
-    if (confirm("Tem certeza que deseja excluir este motorista? Todos os dados vinculados serão perdidos.")) {
+    if (confirm("🚨 ATENÇÃO: Tem certeza que deseja excluir ESTE MOTORISTA? Todos os dados, rotas e escolas vinculados a este perfil serão PERDIDOS PERMANENTEMENTE.")) {
       await remove(ref(db, `drivers/${driverId}`));
     }
+  };
+
+  const deleteStudent = async (routeId: string, stopIdx: number) => {
+    if (!confirm("Remover este aluno da rota?")) return;
+    const route = curDriver?.routes?.[routeId];
+    if (!route) return;
+    
+    const newStops: Record<string, any> = {};
+    const stopsList = Object.values(route.stops || {}) as Stop[];
+    const sorted = stopsList.sort((a, b) => a.idx - b.idx);
+    const filtered = sorted.filter(s => s.idx !== stopIdx);
+    
+    filtered.forEach((s, i) => {
+        newStops[`stop${i}`] = { ...s, idx: i };
+    });
+    
+    await set(ref(db, `drivers/${curDriver!.id}/routes/${routeId}/stops`), newStops);
   };
 
   const getStopsArr = (route: Route) => {
@@ -299,6 +316,31 @@ export default function DriverApp() {
     }
   };
 
+  const undoAction = async (idx: number) => {
+    const key = `stop${idx}`;
+    setMarks(prev => {
+        const next = {...prev};
+        delete next[key];
+        return next;
+    });
+    setAbsents(prev => {
+        const next = {...prev};
+        delete next[key];
+        return next;
+    });
+    
+    if (activeRouteId) {
+        const routeKey = `${curDriver!.id}_${activeRouteId}`;
+        await remove(ref(db, `absent/${routeKey}/${key}`));
+        
+        const snap = await get(ref(db, `active_routes/${routeKey}/nextStopIdx`));
+        const current = snap.val() || 0;
+        if (idx < current) {
+            await set(ref(db, `active_routes/${routeKey}/nextStopIdx`), idx);
+        }
+    }
+  };
+
   const geocode = async (addr: string) => {
     try {
         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr + ", Brasil")}`);
@@ -342,7 +384,7 @@ export default function DriverApp() {
             <div className="space-y-3">
                 {Object.values(drivers).map((d: any) => (
                     <div key={d.id} className="relative group">
-                        <button onClick={() => loginWithPin(d)} className="w-full text-left p-4 border rounded-xl hover:border-amber-400 hover:bg-amber-50 flex justify-between pr-12 transition-colors">
+                        <button onClick={() => loginWithPin(d)} className="w-full text-left p-4 border rounded-xl hover:border-amber-400 hover:bg-amber-50 flex justify-between pr-12 transition-all">
                             <div className="min-w-0">
                                 <p className="font-bold truncate">{d.name}</p>
                                 <p className="text-xs text-gray-500">{Object.keys(d.routes || {}).length} rota(s)</p>
@@ -351,7 +393,7 @@ export default function DriverApp() {
                         </button>
                         <button 
                             onClick={(e) => handleDeleteDriver(e, d.id)}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-red-300 hover:text-red-600 transition-colors opacity-40 group-hover:opacity-100"
                             title="Excluir motorista"
                         >
                             <Trash2 size={18} />
@@ -470,10 +512,28 @@ export default function DriverApp() {
                                         const done = marks[`stop${s.idx}`];
                                         const abs = absents[`stop${s.idx}`];
                                         return (
-                                            <div key={i} className={cn("flex items-center gap-3 p-2 rounded-lg border", done ? "bg-green-50 border-green-100" : abs ? "bg-gray-100 opacity-50" : "bg-white")}>
-                                                <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold", done ? "bg-green-500 text-white" : "bg-gray-100 text-gray-500")}>{done ? "✓" : abs ? "X" : i+1}</div>
-                                                <div className="flex-1 min-w-0"><p className={cn("text-sm font-bold truncate", done && "line-through text-gray-400")}>{s.isSchool ? "🏫" : ""}{s.child}</p></div>
-                                                {!s.isSchool && !done && !abs && <div className="flex gap-1"><Button size="sm" variant="ghost" className="h-6 w-6 !p-0" onClick={() => toggleAbsent(s.idx)}>X</Button><Button size="sm" className="h-6 px-2" onClick={() => markStopDone(s.idx, s.child)}>OK</Button></div>}
+                                            <div key={i} className={cn("flex flex-col gap-2 p-3 rounded-xl border transition-all", done ? "bg-green-50 border-green-200" : abs ? "bg-red-50 border-red-100 opacity-80" : "bg-white")}>
+                                                <div className="flex items-center gap-3">
+                                                    <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0", done ? "bg-green-500 text-white" : abs ? "bg-red-500 text-white" : "bg-gray-100 text-gray-500")}>
+                                                        {done ? "✓" : abs ? "!" : i+1}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className={cn("text-sm font-bold truncate", (done || abs) && "text-gray-500")}>
+                                                            {s.isSchool ? "🏫 " : ""}{s.child}
+                                                        </p>
+                                                        {abs && <p className="text-[10px] text-red-500 font-bold uppercase">Faltou hoje</p>}
+                                                    </div>
+                                                    {(done || abs) && (
+                                                        <button onClick={() => undoAction(s.idx)} className="text-[10px] text-gray-400 font-black hover:text-gray-600 uppercase tracking-tighter">Desfazer</button>
+                                                    )}
+                                                </div>
+                                                
+                                                {!s.isSchool && !done && !abs && (
+                                                    <div className="grid grid-cols-2 gap-2 mt-1">
+                                                        <Button size="sm" variant="danger" className="text-xs h-9 py-0" onClick={() => toggleAbsent(s.idx)}>Faltou</Button>
+                                                        <Button size="sm" className="text-xs h-9 py-0 bg-green-500 hover:bg-green-600 text-white" onClick={() => markStopDone(s.idx, s.child)}>Chegou</Button>
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -483,19 +543,49 @@ export default function DriverApp() {
                     )}
 
                     {activeTab === "alunos" && (
-                        <div className="space-y-4">
+                        <div className="space-y-6">
                             {Object.values(curDriver?.routes || {}).map((r: any) => (
-                                <div key={r.id} className="space-y-1">
-                                    <p className="text-[10px] font-bold text-amber-600 uppercase">{r.name}</p>
-                                    {Object.values(r.stops || {}).map((s: any) => {
-                                        const link = `${window.location.origin}/?v=parent&d=${curDriver!.id}&r=${r.id}&s=${s.idx}`;
-                                        return (
-                                            <Card key={s.idx} className="!p-2 text-sm flex justify-between items-center">
-                                                <span className="font-bold truncate max-w-[120px]">{s.child}</span>
-                                                <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(link); alert("Link copiado!"); }}><Copy size={14}/></Button>
-                                            </Card>
-                                        );
-                                    })}
+                                <div key={r.id} className="space-y-2">
+                                    <div className="flex justify-between items-center px-1">
+                                        <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{r.name}</p>
+                                        <span className="text-[9px] text-gray-400 uppercase">{Object.keys(r.stops || {}).length} alunos</span>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        {Object.values(r.stops || {}).map((s: any) => {
+                                            const link = `${window.location.origin}/?v=parent&d=${curDriver!.id}&r=${r.id}&s=${s.idx}`;
+                                            return (
+                                                <Card key={s.idx} className="!p-2.5 text-sm flex justify-between items-center group hover:border-amber-200 transition-all">
+                                                    <div className="min-w-0 flex-1">
+                                                        <span className="font-bold block truncate">{s.child}</span>
+                                                        <span className="text-[10px] text-gray-400 truncate block">{s.rua}, {s.num}</span>
+                                                    </div>
+                                                    <div className="flex gap-1 items-center shrink-0 ml-2">
+                                                        <button 
+                                                            onClick={() => { navigator.clipboard.writeText(link); alert("Link do responsável copiado!"); }}
+                                                            className="p-1.5 text-gray-400 hover:text-amber-500 transition-colors"
+                                                            title="Copiar link"
+                                                        >
+                                                            <Copy size={16}/>
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => { setRouteEditId(r.id); setRouteData({name: r.name, schoolId: r.schoolId, stops: Object.values(r.stops || {})}); setShowRouteModal(true); }}
+                                                            className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
+                                                            title="Editar na rota"
+                                                        >
+                                                            <Edit2 size={16}/>
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => deleteStudent(r.id, s.idx)}
+                                                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                                                            title="Remover aluno"
+                                                        >
+                                                            <Trash2 size={16}/>
+                                                        </button>
+                                                    </div>
+                                                </Card>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             ))}
                         </div>
