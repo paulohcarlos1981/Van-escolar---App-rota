@@ -61,6 +61,7 @@ interface Driver {
   id: string;
   name: string;
   pin: string;
+  defaultCity?: string;
   routes?: Record<string, Route>;
   schools?: Record<string, SchoolData>;
   sessionMins?: number;
@@ -165,6 +166,8 @@ export default function DriverApp() {
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [routeEditId, setRouteEditId] = useState<string | null>(null);
   const [routeData, setRouteData] = useState<{name: string, schoolId: string, stops: any[]}>({ name: "", schoolId: "", stops: [] });
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsData, setSettingsData] = useState({ defaultCity: "" });
 
   const gpsWatchRef = useRef<number | null>(null);
 
@@ -193,7 +196,11 @@ export default function DriverApp() {
     if (curDriver) {
       const driverRef = ref(db, `drivers/${curDriver.id}`);
       onValue(driverRef, (snap) => {
-        if (snap.exists()) setCurDriver(snap.val());
+        if (snap.exists()) {
+          const data = snap.val();
+          setCurDriver(data);
+          setSettingsData({ defaultCity: data.defaultCity || "" });
+        }
       });
       return () => off(driverRef);
     }
@@ -341,6 +348,12 @@ export default function DriverApp() {
     }
   };
 
+  const saveSettings = async () => {
+    if (!curDriver) return;
+    await set(ref(db, `drivers/${curDriver.id}/defaultCity`), settingsData.defaultCity);
+    setShowSettingsModal(false);
+  };
+
   const geocode = async (addr: string) => {
     try {
         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr + ", Brasil")}`);
@@ -367,8 +380,17 @@ export default function DriverApp() {
     const stops: Record<string, Stop> = {};
     for (let i = 0; i < routeData.stops.length; i++) {
         const s = routeData.stops[i];
-        const coords = s.lat ? { lat: s.lat, lng: s.lng } : (await geocode(`${s.rua}, ${s.num}, ${s.cidade}`));
-        stops[`stop${i}`] = { idx: i, ...s, addr: `${s.rua}, ${s.num}, ${s.cidade}`, lat: coords?.lat || school.lat, lng: coords?.lng || school.lng };
+        // For geocoding, we construct a better address string
+        const searchAddr = `${s.rua}, ${s.num}, ${s.bairro}, ${s.cidade}`;
+        const coords = s.lat ? { lat: s.lat, lng: s.lng } : (await geocode(searchAddr));
+        
+        stops[`stop${i}`] = { 
+            idx: i, 
+            ...s, 
+            addr: searchAddr, 
+            lat: coords?.lat || school.lat, 
+            lng: coords?.lng || school.lng 
+        };
     }
     await set(ref(db, `drivers/${curDriver!.id}/routes/${routeId}`), { id: routeId, name: routeData.name, schoolId: routeData.schoolId, schoolName: school.name, schoolLat: school.lat, schoolLng: school.lng, stops });
     setShowRouteModal(false);
@@ -465,10 +487,11 @@ export default function DriverApp() {
   return (
     <div className="flex flex-col h-screen max-w-5xl mx-auto bg-white border-x">
         <header className="h-14 border-b flex items-center px-4 justify-between sticky top-0 z-[1000] bg-white">
-            <div className="flex items-center gap-2 font-bold text-lg text-amber-600"><Bus /> VanEscolar</div>
+            <div className="flex items-center gap-2 font-bold text-lg text-amber-600"><Bus /> {curDriver?.name || "VanEscolar"}</div>
             <div className="flex items-center gap-2">
                 <Badge active={!!activeRouteId}>{activeRouteId ? "A Caminho" : "Offline"}</Badge>
-                <button onClick={handleLogout}><LogOut className="text-gray-400" size={20}/></button>
+                <button onClick={() => setShowSettingsModal(true)} className="p-2 text-gray-400 hover:text-amber-500 transition-colors"><Settings size={20}/></button>
+                <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500 transition-colors"><LogOut size={20}/></button>
             </div>
         </header>
 
@@ -627,6 +650,33 @@ export default function DriverApp() {
             )}
         </div>
 
+        {showSettingsModal && (
+            <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+                <Card className="w-full max-w-sm p-6 space-y-4">
+                    <div className="flex items-center gap-2 text-amber-600 mb-2">
+                        <Settings size={20} />
+                        <h3 className="font-bold">Configurações do Perfil</h3>
+                    </div>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Cidade Padrão de Atendimento</label>
+                            <input 
+                                className="w-full border p-2.5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500" 
+                                placeholder="Ex: Ribeirão Preto" 
+                                value={settingsData.defaultCity} 
+                                onChange={e => setSettingsData(p => ({...p, defaultCity: e.target.value}))} 
+                            />
+                            <p className="text-[10px] text-gray-400 mt-1">Esta cidade será sugerida automaticamente nos novos cadastros.</p>
+                        </div>
+                    </div>
+                    <div className="pt-2 flex gap-2">
+                        <Button variant="ghost" className="flex-1" onClick={() => setShowSettingsModal(false)}>Cancelar</Button>
+                        <Button className="flex-1" onClick={saveSettings}>Salvar</Button>
+                    </div>
+                </Card>
+            </div>
+        )}
+
         {showSchoolModal && (
             <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
                 <Card className="w-full max-w-sm p-6 space-y-4">
@@ -662,23 +712,31 @@ export default function DriverApp() {
                                 >
                                     <X size={16} />
                                 </button>
-                                <div className="space-y-1.5 mt-1">
+                                <div className="space-y-2 mt-1">
                                     <div className="flex items-center gap-2">
                                         <User size={12} className="text-amber-500 shrink-0" />
                                         <input className="flex-1 bg-transparent font-bold outline-none border-b border-transparent focus:border-amber-200" placeholder="Nome da Criança" value={s.child} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).child=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <MapPin size={12} className="text-gray-400 shrink-0" />
-                                        <input className="flex-1 bg-transparent outline-none border-b border-transparent focus:border-amber-200" placeholder="Endereço (Rua, Nº, Bairro)" value={s.rua} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).rua=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                    <div className="grid grid-cols-12 gap-2 pl-5">
+                                        <div className="col-span-8">
+                                            <input className="w-full bg-transparent text-[11px] outline-none border-b border-transparent focus:border-amber-200" placeholder="Rua / Logradouro" value={s.rua} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).rua=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                        </div>
+                                        <div className="col-span-4">
+                                            <input className="w-full bg-transparent text-[11px] outline-none border-b border-transparent focus:border-amber-200" placeholder="Nº" value={s.num} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).num=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <MapIcon size={12} className="text-gray-400 shrink-0" />
-                                        <input className="flex-1 bg-transparent outline-none border-b border-transparent focus:border-amber-200" placeholder="Cidade" value={s.cidade} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).cidade=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                    <div className="grid grid-cols-12 gap-2 pl-5">
+                                        <div className="col-span-6">
+                                            <input className="w-full bg-transparent text-[11px] outline-none border-b border-transparent focus:border-amber-200" placeholder="Bairro" value={s.bairro} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).bairro=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                        </div>
+                                        <div className="col-span-6">
+                                            <input className="w-full bg-transparent text-[11px] outline-none border-b border-transparent focus:border-amber-200" placeholder="Cidade" value={s.cidade} onChange={e => { const ns=[...routeData.stops]; (ns[i] as any).cidade=e.target.value; setRouteData(p=>({...p, stops: ns})); }} />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         ))}
-                        <Button variant="outline" size="sm" fullWidth className="h-10 border-dashed border-2 hover:bg-amber-50 hover:border-amber-300" onClick={() => setRouteData(p=>({...p, stops: [...p.stops, {child:"", rua:"", num:"", cidade: (curDriver?.schools ? Object.values(curDriver.schools)[0] as any : {}).cidade || ""}]}))}>
+                        <Button variant="outline" size="sm" fullWidth className="h-10 border-dashed border-2 hover:bg-amber-50 hover:border-amber-300" onClick={() => setRouteData(p=>({...p, stops: [...p.stops, {child:"", rua:"", num:"", bairro: "", cidade: settingsData.defaultCity || ""}]}))}>
                             <Plus size={16} /> Adicionar Aluno
                         </Button>
                     </div>
