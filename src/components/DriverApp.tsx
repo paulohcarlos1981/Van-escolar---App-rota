@@ -473,7 +473,10 @@ export default function DriverApp() {
         </header>
 
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-            <div className="w-full md:w-80 border-r bg-gray-50 overflow-y-auto shrink-0">
+            <div className={cn(
+                "w-full border-r bg-gray-50 overflow-y-auto shrink-0 transition-all",
+                activeTab === "rotas" ? "md:w-80" : "flex-1"
+            )}>
                 <div className="flex border-b sticky top-0 bg-gray-50 z-10">
                     {["rotas", "transmit", "alunos", "escolas"].map(tab => (
                         <button 
@@ -605,21 +608,23 @@ export default function DriverApp() {
                 </div>
             </div>
 
-            <div className="flex-1 relative min-h-[300px] z-0">
-                <MapContainer center={[-21.177, -47.821]} zoom={13} style={{ height: "100%", width: "100%" }}>
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    {activeRouteId && curDriver?.routes?.[activeRouteId] && (
-                        <>
-                            {getStopsArr(curDriver.routes[activeRouteId]).map((s, i) => (
-                                <Marker key={i} position={[s.lat, s.lng]} icon={createStopIcon(s.isSchool ? "#ef4444" : "#f59e0b", s.isSchool ? "🏫" : String(i+1))} />
-                            ))}
-                            <Polyline positions={getStopsArr(curDriver.routes[activeRouteId]).map(s => [s.lat, s.lng])} color="#f59e0b" dashArray="5,5" weight={2} />
-                            <FitBounds positions={getStopsArr(curDriver.routes[activeRouteId]).map(s => [s.lat, s.lng])} />
-                        </>
-                    )}
-                    {gpsData?.lat && <Marker position={[gpsData.lat, gpsData.lng]} icon={createBusIcon()} zIndexOffset={1000} />}
-                </MapContainer>
-            </div>
+            {activeTab === "rotas" && (
+                <div className="flex-1 relative min-h-[300px] z-0">
+                    <MapContainer center={[-21.177, -47.821]} zoom={13} style={{ height: "100%", width: "100%" }}>
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                        {activeRouteId && curDriver?.routes?.[activeRouteId] && (
+                            <>
+                                {getStopsArr(curDriver.routes[activeRouteId]).map((s, i) => (
+                                    <Marker key={i} position={[s.lat, s.lng]} icon={createStopIcon(s.isSchool ? "#ef4444" : "#f59e0b", s.isSchool ? "🏫" : String(i+1))} />
+                                ))}
+                                <Polyline positions={getStopsArr(curDriver.routes[activeRouteId]).map(s => [s.lat, s.lng])} color="#f59e0b" dashArray="5,5" weight={2} />
+                                <FitBounds positions={getStopsArr(curDriver.routes[activeRouteId]).map(s => [s.lat, s.lng])} />
+                            </>
+                        )}
+                        {gpsData?.lat && <Marker position={[gpsData.lat, gpsData.lng]} icon={createBusIcon()} zIndexOffset={1000} />}
+                    </MapContainer>
+                </div>
+            )}
         </div>
 
         {showSchoolModal && (
