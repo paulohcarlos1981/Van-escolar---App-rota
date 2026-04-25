@@ -171,6 +171,7 @@ export default function DriverApp() {
 
   const gpsWatchRef = useRef<number | null>(null);
 
+  // Persistence check on mount
   useEffect(() => {
     const driversRef = ref(db, "drivers");
     onValue(driversRef, (snapshot) => {
@@ -183,14 +184,59 @@ export default function DriverApp() {
         try {
           const { driverId, exp } = JSON.parse(saved);
           if (Date.now() < exp && data[driverId]) {
-            setCurDriver(data[driverId]);
+            const driver = data[driverId];
+            setCurDriver(driver);
             setScreen("dashboard");
+            
+            // Check for active transmission to resume
+            const activeRef = ref(db, "active_routes");
+            get(activeRef).then(snap => {
+                if (snap.exists()) {
+                    const active = snap.val();
+                    const activeKey = Object.keys(active).find(k => k.startsWith(`${driverId}_`));
+                    if (activeKey) {
+                        const rid = activeKey.split('_')[1];
+                        setActiveRouteId(rid);
+                        startGpsWatch(rid, driverId);
+                        
+                        // Load current absents
+                        onValue(ref(db, `absent/${driverId}_${rid}`), (absSnap) => {
+                            if (absSnap.exists()) setAbsents(absSnap.val());
+                        });
+                    }
+                }
+            });
           }
         } catch (e) { localStorage.removeItem("ve_session"); }
       }
     });
     return () => off(driversRef);
   }, []);
+
+  const startGpsWatch = (routeId: string, driverId: string) => {
+    if (gpsWatchRef.current !== null) navigator.geolocation.clearWatch(gpsWatchRef.current);
+    gpsWatchRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude: lat, longitude: lng, speed } = pos.coords;
+          const spd = speed ? Math.round(speed * 3.6) : 0;
+          const data = { lat, lng, spd, ts: Date.now(), on: true };
+          set(ref(db, `gps/${driverId}_${routeId}`), data);
+          setGpsData(data);
+        },
+        (err) => console.error(err),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+    );
+  };
+
+  // Background GPS for the driver (always visible on map)
+  useEffect(() => {
+    if (curDriver && !activeRouteId) {
+        const id = navigator.geolocation.watchPosition((pos) => {
+            setGpsData({ lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() });
+        }, null, { enableHighAccuracy: true });
+        return () => navigator.geolocation.clearWatch(id);
+    }
+  }, [curDriver?.id, activeRouteId]);
 
   useEffect(() => {
     if (curDriver) {
@@ -289,9 +335,19 @@ export default function DriverApp() {
     return [...arr, { child: route.schoolName, lat: route.schoolLat, lng: route.schoolLng, addr: "", idx: arr.length, isSchool: true }];
   };
 
+  const getVisibleStopsArr = (route: Route) => {
+    const arr = Object.values(route.stops || {}).sort((a, b) => a.idx - b.idx);
+    const filtered = arr.filter(s => !absents[`stop${s.idx}`]);
+    return [...filtered, { child: route.schoolName, lat: route.schoolLat, lng: route.schoolLng, addr: "", idx: filtered.length, isSchool: true }];
+  };
+
   const startRouteTransmission = (routeId: string) => {
     const route = curDriver?.routes?.[routeId];
     if (!route) return;
+    
+    const count = Object.keys(route.stops || {}).length;
+    alert(`🚐 Transmissão Iniciada!\n📍 Você tem ${count} paradas nesta rota.\n💪 Bom trabalho e boa viagem!`);
+
     setActiveRouteId(routeId);
     setActiveTab("transmit");
     setMarks({});
@@ -299,19 +355,7 @@ export default function DriverApp() {
     set(ref(db, `active_routes/${curDriver!.id}_${routeId}`), { on: true, nextStopIdx: 0, startTime: Date.now() });
     remove(ref(db, `absent/${curDriver!.id}_${routeId}`));
 
-    if (navigator.geolocation) {
-      gpsWatchRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          const { latitude: lat, longitude: lng, speed } = pos.coords;
-          const spd = speed ? Math.round(speed * 3.6) : 0;
-          const data = { lat, lng, spd, ts: Date.now(), on: true };
-          set(ref(db, `gps/${curDriver!.id}_${routeId}`), data);
-          setGpsData(data);
-        },
-        null,
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-      );
-    }
+    startGpsWatch(routeId, curDriver!.id);
     set(ref(db, `history/${curDriver!.id}/${new Date().toISOString().split('T')[0]}/${routeId}/start`), { ts: Date.now(), routeName: route.name });
   };
 
@@ -773,11 +817,11 @@ export default function DriverApp() {
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                         {activeRouteId && curDriver?.routes?.[activeRouteId] && (
                             <>
-                                {getStopsArr(curDriver.routes[activeRouteId]).map((s, i) => (
+                                {getVisibleStopsArr(curDriver.routes[activeRouteId]).map((s, i) => (
                                     <Marker key={i} position={[s.lat, s.lng]} icon={createStopIcon(s.isSchool ? "#ef4444" : "#f59e0b", s.isSchool ? "🏫" : String(i+1))} />
                                 ))}
-                                <Polyline positions={getStopsArr(curDriver.routes[activeRouteId]).map(s => [s.lat, s.lng])} color="#f59e0b" dashArray="5,5" weight={2} />
-                                <FitBounds positions={getStopsArr(curDriver.routes[activeRouteId]).map(s => [s.lat, s.lng])} />
+                                <Polyline positions={getVisibleStopsArr(curDriver.routes[activeRouteId]).map(s => [s.lat, s.lng])} color="#f59e0b" dashArray="5,5" weight={2} />
+                                <FitBounds positions={getVisibleStopsArr(curDriver.routes[activeRouteId]).map(s => [s.lat, s.lng])} />
                             </>
                         )}
                         {gpsData?.lat && <Marker position={[gpsData.lat, gpsData.lng]} icon={createBusIcon()} zIndexOffset={1000} />}
@@ -857,80 +901,87 @@ export default function DriverApp() {
                             </div>
                         </div>
 
-                        <div className="relative">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Rua / Logradouro (Pesquisa Automática)</label>
-                            <input 
-                                className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
-                                placeholder="Digite a rua..." 
-                                value={editingStudent.data.rua}
-                                onChange={e => {
-                                    const val = e.target.value;
-                                    setEditingStudent(p => ({...p!, data: {...p!.data, rua: val}}));
-                                    searchAddress(val);
-                                    setActiveInputIdx(-1);
-                                }}
-                                onBlur={() => setTimeout(() => setActiveInputIdx(null), 200)}
-                            />
-                            {activeInputIdx === -1 && addressSuggestions.length > 0 && (
-                                <div className="absolute top-full left-0 right-0 bg-white border rounded-xl shadow-xl z-50 mt-1 max-h-40 overflow-auto">
-                                    {addressSuggestions.map((s, i) => (
-                                        <button 
-                                            key={i} 
-                                            className="w-full text-left p-3 text-xs hover:bg-amber-50 border-b last:border-0"
-                                            onClick={() => {
-                                                const addr = s.address;
-                                                setEditingStudent(p => ({
-                                                    ...p!,
-                                                    data: {
-                                                        ...p!.data,
-                                                        rua: addr.road || addr.pedestrian || addr.suburb || editingStudent.data.rua,
-                                                        num: addr.house_number || "",
-                                                        bairro: addr.suburb || addr.neighbourhood || "",
-                                                        cidade: addr.city || addr.town || addr.municipality || settingsData.defaultCity || "",
-                                                        lat: parseFloat(s.lat),
-                                                        lng: parseFloat(s.lon)
-                                                    }
-                                                }));
-                                                setAddressSuggestions([]);
-                                                setActiveInputIdx(null);
-                                            }}
-                                        >
-                                            <p className="font-bold">{s.display_name}</p>
-                                        </button>
-                                    ))}
+                        <div className="space-y-4 border rounded-xl p-3 bg-gray-50/50">
+                            <div className="relative">
+                                <label className="text-[10px] font-bold text-amber-600 uppercase mb-1 block flex items-center gap-1">
+                                    <MapPin size={10} /> Buscar Endereço (Preenchimento Automático)
+                                </label>
+                                <input 
+                                    className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 bg-white" 
+                                    placeholder="Digite a rua e número..." 
+                                    onChange={e => {
+                                        searchAddress(e.target.value);
+                                        setActiveInputIdx(-1);
+                                    }}
+                                    onBlur={() => setTimeout(() => setActiveInputIdx(null), 200)}
+                                />
+                                {activeInputIdx === -1 && addressSuggestions.length > 0 && (
+                                    <div className="absolute top-full left-0 right-0 bg-white border rounded-xl shadow-xl z-50 mt-1 max-h-48 overflow-auto">
+                                        {addressSuggestions.map((s, i) => (
+                                            <button 
+                                                key={i} 
+                                                className="w-full text-left p-3 text-xs hover:bg-amber-50 border-b last:border-0"
+                                                onClick={() => {
+                                                    const addr = s.address;
+                                                    setEditingStudent(p => ({
+                                                        ...p!,
+                                                        data: {
+                                                            ...p!.data,
+                                                            rua: addr.road || addr.pedestrian || addr.suburb || "",
+                                                            num: addr.house_number || "",
+                                                            bairro: addr.suburb || addr.neighbourhood || "",
+                                                            cidade: addr.city || addr.town || addr.municipality || settingsData.defaultCity || "",
+                                                            lat: parseFloat(s.lat),
+                                                            lng: parseFloat(s.lon)
+                                                        }
+                                                    }));
+                                                    setAddressSuggestions([]);
+                                                    setActiveInputIdx(null);
+                                                }}
+                                            >
+                                                <p className="font-bold">{s.display_name}</p>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <p className="text-[9px] text-gray-400 font-bold uppercase text-center">Ou confirme os dados abaixo</p>
+
+                            <div className="grid grid-cols-12 gap-2">
+                                <div className="col-span-12">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Rua / Logradouro</label>
+                                    <input 
+                                        className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 bg-white" 
+                                        value={editingStudent.data.rua}
+                                        onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, rua: e.target.value}}))}
+                                    />
                                 </div>
-                            )}
-                        </div>
-
-                        <div className="grid grid-cols-12 gap-2">
-                            <div className="col-span-4">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Nº</label>
-                                <input 
-                                    className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
-                                    placeholder="Ex: 123" 
-                                    value={editingStudent.data.num}
-                                    onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, num: e.target.value}}))}
-                                />
+                                <div className="col-span-4">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Nº</label>
+                                    <input 
+                                        className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 bg-white" 
+                                        value={editingStudent.data.num}
+                                        onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, num: e.target.value}}))}
+                                    />
+                                </div>
+                                <div className="col-span-8">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Bairro</label>
+                                    <input 
+                                        className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 bg-white" 
+                                        value={editingStudent.data.bairro}
+                                        onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, bairro: e.target.value}}))}
+                                    />
+                                </div>
+                                <div className="col-span-12">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Cidade</label>
+                                    <input 
+                                        className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 bg-white" 
+                                        value={editingStudent.data.cidade}
+                                        onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, cidade: e.target.value}}))}
+                                    />
+                                </div>
                             </div>
-                            <div className="col-span-8">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Bairro</label>
-                                <input 
-                                    className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
-                                    placeholder="Nome do bairro" 
-                                    value={editingStudent.data.bairro}
-                                    onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, bairro: e.target.value}}))}
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Cidade</label>
-                            <input 
-                                className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
-                                placeholder="Cidade" 
-                                value={editingStudent.data.cidade}
-                                onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, cidade: e.target.value}}))}
-                            />
                         </div>
                     </div>
 
