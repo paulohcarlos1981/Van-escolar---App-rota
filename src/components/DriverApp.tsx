@@ -5,7 +5,7 @@ import { cn } from "../lib/utils";
 import { 
   Bus, Lock, User, Plus, MapPin, School, 
   Settings, LogOut, Trash2, Edit2, Play, Square, Check, X,
-  Copy, Map as MapIcon, Eye, EyeOff
+  Copy, Map as MapIcon, Eye, EyeOff, ChevronUp, ChevronDown
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -249,12 +249,35 @@ export default function DriverApp() {
     const route = curDriver?.routes?.[routeId];
     if (!route) return;
     
-    const newStops: Record<string, any> = {};
     const stopsList = Object.values(route.stops || {}) as Stop[];
     const sorted = stopsList.sort((a, b) => a.idx - b.idx);
     const filtered = sorted.filter(s => s.idx !== stopIdx);
     
+    const newStops: Record<string, any> = {};
     filtered.forEach((s, i) => {
+        newStops[`stop${i}`] = { ...s, idx: i };
+    });
+    
+    await set(ref(db, `drivers/${curDriver!.id}/routes/${routeId}/stops`), newStops);
+  };
+
+  const moveStop = async (routeId: string, stopIdx: number, direction: 'up' | 'down') => {
+    const route = curDriver?.routes?.[routeId];
+    if (!route) return;
+    
+    const stopsList = Object.values(route.stops || {}) as Stop[];
+    const sorted = [...stopsList].sort((a, b) => a.idx - b.idx);
+    
+    const targetIdx = direction === 'up' ? stopIdx - 1 : stopIdx + 1;
+    if (targetIdx < 0 || targetIdx >= sorted.length) return;
+    
+    // Swap
+    const temp = sorted[stopIdx];
+    sorted[stopIdx] = sorted[targetIdx];
+    sorted[targetIdx] = temp;
+    
+    const newStops: Record<string, any> = {};
+    sorted.forEach((s, i) => {
         newStops[`stop${i}`] = { ...s, idx: i };
     });
     
@@ -570,50 +593,76 @@ export default function DriverApp() {
 
                     {activeTab === "alunos" && (
                         <div className="space-y-6">
-                            {Object.values(curDriver?.routes || {}).map((r: any) => (
-                                <div key={r.id} className="space-y-2">
-                                    <div className="flex justify-between items-center px-1">
-                                        <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{r.name}</p>
-                                        <span className="text-[9px] text-gray-400 uppercase">{Object.keys(r.stops || {}).length} alunos</span>
+                            <div className="px-4 pt-4">
+                                <Button fullWidth variant="outline" className="border-dashed" onClick={() => { setRouteEditId(null); setRouteData({name: "", schoolId: "", stops: []}); setShowRouteModal(true); }}>
+                                    <Plus size={16} className="mr-2" /> Novo Aluno / Percurso
+                                </Button>
+                            </div>
+                            {Object.values(curDriver?.routes || {}).map((r: any) => {
+                                const stopsSorted = Object.values(r.stops || {}).sort((a: any, b: any) => a.idx - b.idx);
+                                return (
+                                    <div key={r.id} className="space-y-2">
+                                        <div className="flex justify-between items-center px-4">
+                                            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{r.name}</p>
+                                            <span className="text-[9px] text-gray-400 uppercase">{stopsSorted.length} alunos</span>
+                                        </div>
+                                        <div className="space-y-1.5 px-4">
+                                            {stopsSorted.map((s: any, idx: number) => {
+                                                const link = `${window.location.origin}/?v=parent&d=${curDriver!.id}&r=${r.id}&s=${s.idx}`;
+                                                return (
+                                                    <Card key={s.idx} className="!p-2.5 text-sm flex justify-between items-center group hover:border-amber-200 transition-all">
+                                                        <div className="flex items-center gap-2 mr-2">
+                                                            <div className="flex flex-col gap-0.5">
+                                                                <button 
+                                                                    disabled={idx === 0}
+                                                                    onClick={() => moveStop(r.id, idx, 'up')}
+                                                                    className="p-0.5 text-gray-300 hover:text-amber-500 disabled:opacity-0"
+                                                                >
+                                                                    <ChevronUp size={14} />
+                                                                </button>
+                                                                <button 
+                                                                    disabled={idx === stopsSorted.length - 1}
+                                                                    onClick={() => moveStop(r.id, idx, 'down')}
+                                                                    className="p-0.5 text-gray-300 hover:text-amber-500 disabled:opacity-0"
+                                                                >
+                                                                    <ChevronDown size={14} />
+                                                                </button>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <span className="font-bold block truncate">{s.child}</span>
+                                                                <span className="text-[10px] text-gray-400 truncate block">{s.rua}, {s.num}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-1 items-center shrink-0 ml-2">
+                                                            <button 
+                                                                onClick={() => { navigator.clipboard.writeText(link); alert("Link do responsável copiado!"); }}
+                                                                className="p-1.5 text-gray-400 hover:text-amber-500 transition-colors"
+                                                                title="Copiar link"
+                                                            >
+                                                                <Copy size={16}/>
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => { setRouteEditId(r.id); setRouteData({name: r.name, schoolId: r.schoolId, stops: Object.values(r.stops || {})}); setShowRouteModal(true); }}
+                                                                className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
+                                                                title="Editar na rota"
+                                                            >
+                                                                <Edit2 size={16}/>
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => deleteStudent(r.id, s.idx)}
+                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                                                                title="Remover aluno"
+                                                            >
+                                                                <Trash2 size={16}/>
+                                                            </button>
+                                                        </div>
+                                                    </Card>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                    <div className="space-y-1.5">
-                                        {Object.values(r.stops || {}).map((s: any) => {
-                                            const link = `${window.location.origin}/?v=parent&d=${curDriver!.id}&r=${r.id}&s=${s.idx}`;
-                                            return (
-                                                <Card key={s.idx} className="!p-2.5 text-sm flex justify-between items-center group hover:border-amber-200 transition-all">
-                                                    <div className="min-w-0 flex-1">
-                                                        <span className="font-bold block truncate">{s.child}</span>
-                                                        <span className="text-[10px] text-gray-400 truncate block">{s.rua}, {s.num}</span>
-                                                    </div>
-                                                    <div className="flex gap-1 items-center shrink-0 ml-2">
-                                                        <button 
-                                                            onClick={() => { navigator.clipboard.writeText(link); alert("Link do responsável copiado!"); }}
-                                                            className="p-1.5 text-gray-400 hover:text-amber-500 transition-colors"
-                                                            title="Copiar link"
-                                                        >
-                                                            <Copy size={16}/>
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => { setRouteEditId(r.id); setRouteData({name: r.name, schoolId: r.schoolId, stops: Object.values(r.stops || {})}); setShowRouteModal(true); }}
-                                                            className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
-                                                            title="Editar na rota"
-                                                        >
-                                                            <Edit2 size={16}/>
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => deleteStudent(r.id, s.idx)}
-                                                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                                                            title="Remover aluno"
-                                                        >
-                                                            <Trash2 size={16}/>
-                                                        </button>
-                                                    </div>
-                                                </Card>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
 
