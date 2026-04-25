@@ -858,20 +858,19 @@ export default function DriverApp() {
                         </div>
 
                         <div className="relative">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Endereço (Rua, Nº, Bairro)</label>
-                            <div className="flex gap-2 mb-2">
-                                <input 
-                                    className="flex-1 border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
-                                    placeholder="Comece a digitar o endereço..." 
-                                    value={activeInputIdx === -1 ? "" : `${editingStudent.data.rua} ${editingStudent.data.num}`}
-                                    onChange={e => {
-                                        const val = e.target.value;
-                                        setEditingStudent(p => ({...p!, data: {...p!.data, rua: val}}));
-                                        searchAddress(val);
-                                        setActiveInputIdx(-1);
-                                    }} 
-                                />
-                            </div>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Rua / Logradouro (Pesquisa Automática)</label>
+                            <input 
+                                className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
+                                placeholder="Digite a rua..." 
+                                value={editingStudent.data.rua}
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    setEditingStudent(p => ({...p!, data: {...p!.data, rua: val}}));
+                                    searchAddress(val);
+                                    setActiveInputIdx(-1);
+                                }}
+                                onBlur={() => setTimeout(() => setActiveInputIdx(null), 200)}
+                            />
                             {activeInputIdx === -1 && addressSuggestions.length > 0 && (
                                 <div className="absolute top-full left-0 right-0 bg-white border rounded-xl shadow-xl z-50 mt-1 max-h-40 overflow-auto">
                                     {addressSuggestions.map((s, i) => (
@@ -884,7 +883,7 @@ export default function DriverApp() {
                                                     ...p!,
                                                     data: {
                                                         ...p!.data,
-                                                        rua: addr.road || addr.pedestrian || addr.suburb || "",
+                                                        rua: addr.road || addr.pedestrian || addr.suburb || editingStudent.data.rua,
                                                         num: addr.house_number || "",
                                                         bairro: addr.suburb || addr.neighbourhood || "",
                                                         cidade: addr.city || addr.town || addr.municipality || settingsData.defaultCity || "",
@@ -901,6 +900,37 @@ export default function DriverApp() {
                                     ))}
                                 </div>
                             )}
+                        </div>
+
+                        <div className="grid grid-cols-12 gap-2">
+                            <div className="col-span-4">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Nº</label>
+                                <input 
+                                    className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
+                                    placeholder="Ex: 123" 
+                                    value={editingStudent.data.num}
+                                    onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, num: e.target.value}}))}
+                                />
+                            </div>
+                            <div className="col-span-8">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Bairro</label>
+                                <input 
+                                    className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
+                                    placeholder="Nome do bairro" 
+                                    value={editingStudent.data.bairro}
+                                    onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, bairro: e.target.value}}))}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Cidade</label>
+                            <input 
+                                className="w-full border p-2.5 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20" 
+                                placeholder="Cidade" 
+                                value={editingStudent.data.cidade}
+                                onChange={e => setEditingStudent(p => ({...p!, data: {...p!.data, cidade: e.target.value}}))}
+                            />
                         </div>
                     </div>
 
@@ -958,7 +988,7 @@ export default function DriverApp() {
                                             <input 
                                                 className="flex-1 bg-transparent text-[11px] outline-none border-b border-transparent focus:border-amber-200" 
                                                 placeholder="Pesquisar endereço..." 
-                                                value={activeInputIdx === i ? "" : `${s.rua} ${s.num}`}
+                                                value={s.rua}
                                                 onChange={e => {
                                                     const val = e.target.value;
                                                     const ns = [...routeData.stops];
@@ -967,6 +997,7 @@ export default function DriverApp() {
                                                     searchAddress(val);
                                                     setActiveInputIdx(i);
                                                 }}
+                                                onBlur={() => setTimeout(() => setActiveInputIdx(null), 200)}
                                             />
                                         </div>
                                         {activeInputIdx === i && addressSuggestions.length > 0 && (
